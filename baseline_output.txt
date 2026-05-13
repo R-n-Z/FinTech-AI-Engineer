@@ -1,0 +1,22 @@
+=== Baseline CPU 运行结果 (2026-05-13) ===
+
+配置: hidden_size=256, intermediate_size=768, moe_intermediate_size=96, num_experts=16, top_k=4
+输入: torch.Size([1, 128, 256])
+输出: torch.Size([1, 128, 256])
+Forward loss: -0.810922
+输入梯度 shape: torch.Size([1, 128, 256]), norm: 2.399895
+
+参数梯度:
+  experts.gate_up_proj: shape=[16, 192, 256], grad_norm=44.815643
+  experts.down_proj: shape=[16, 256, 96], grad_norm=32.267895
+  shared_expert.gate_proj.weight: shape=[768, 256], grad_norm=203.246048
+  shared_expert.up_proj.weight: shape=[768, 256], grad_norm=202.356018
+  shared_expert.down_proj.weight: shape=[256, 768], grad_norm=198.629868
+  gate.weight: shape=[16, 256], grad_norm=3.914895
+  post_norm.weight: shape=[256], grad_norm=197.346146
+
+总参数数量: 1,773,824
+可训练参数: 1,773,824
+
+注意: 无 CUDA 环境，此测试仅验证 baseline 代码的正确性（前向/反向均通过）。
+完整 benchmark 需在 H20-96GB + CUDA 12.8 环境下运行。
