@@ -161,6 +161,7 @@ class MoEBlockOptimized(nn.Module):
             outputs.append(chunk_out)
         return torch.cat(outputs, dim=0)
 
+    @torch.compile
     def _shared_expert_chunk(self, x_chunk):
         return self.shared_expert.down_proj(
             F.silu(self.shared_expert.gate_proj(x_chunk))
