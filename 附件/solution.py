@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.utils.checkpoint as checkpoint
 
 
 class MoEBlockOptimized(nn.Module):
@@ -139,11 +140,31 @@ class MoEBlockOptimized(nn.Module):
         return final_hidden_states
 
     # ------------------------------------------------------------------
-    #  Shared Expert — 与 baseline 数学等价
+    #  Shared Expert — chunked + checkpointed (Plan A)
+    #  沿序列维度分块计算，每块通过 checkpoint 丢弃中间激活，
+    #  显存从 O(T*I) 降至 O(chunk_size*I)。
+    #  128K 下中间激活从 ~6 GB → ~16 MB（chunk_size=256 时）。
     # ------------------------------------------------------------------
     def _shared_expert(self, x):
+        T = x.shape[0]
+        # 限制每块中间张量 ≤ 4 MB（bf16），4 个中间量共 ≤ 16 MB
+        chunk_size = max(1, (4 * 1024 * 1024) // (self.intermediate_size * 2))
+        if T <= chunk_size:
+            return self._shared_expert_chunk(x)
+
+        outputs = []
+        for start in range(0, T, chunk_size):
+            end = min(start + chunk_size, T)
+            chunk_out = checkpoint.checkpoint(
+                self._shared_expert_chunk, x[start:end], use_reentrant=False
+            )
+            outputs.append(chunk_out)
+        return torch.cat(outputs, dim=0)
+
+    def _shared_expert_chunk(self, x_chunk):
         return self.shared_expert.down_proj(
-            F.silu(self.shared_expert.gate_proj(x)) * self.shared_expert.up_proj(x)
+            F.silu(self.shared_expert.gate_proj(x_chunk))
+            * self.shared_expert.up_proj(x_chunk)
         )
 
     # ------------------------------------------------------------------
