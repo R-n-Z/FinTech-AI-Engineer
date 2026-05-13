@@ -143,12 +143,12 @@ class MoEBlockOptimized(nn.Module):
     #  Shared Expert — chunked + checkpointed (Plan A)
     #  沿序列维度分块计算，每块通过 checkpoint 丢弃中间激活，
     #  显存从 O(T*I) 降至 O(chunk_size*I)。
-    #  128K 下中间激活从 ~6 GB → ~16 MB（chunk_size=256 时）。
+    #  131K 下中间激活从 ~6 GB → ~160 MB（chunk_size=~3400 时）。
     # ------------------------------------------------------------------
     def _shared_expert(self, x):
         T = x.shape[0]
-        # 限制每块中间张量 ≤ 4 MB（bf16），4 个中间量共 ≤ 16 MB
-        chunk_size = max(1, (4 * 1024 * 1024) // (self.intermediate_size * 2))
+        # 每块目标 ~40 MB（bf16），4 个中间量合计 ≤ 160 MB
+        chunk_size = (40 * 1024 * 1024) // (self.intermediate_size * 2)
         if T <= chunk_size:
             return self._shared_expert_chunk(x)
 
@@ -156,11 +156,12 @@ class MoEBlockOptimized(nn.Module):
         for start in range(0, T, chunk_size):
             end = min(start + chunk_size, T)
             chunk_out = checkpoint.checkpoint(
-                self._shared_expert_chunk, x[start:end], use_reentrant=False
+                self._shared_expert_chunk, x[start:end], use_reentrant=True
             )
             outputs.append(chunk_out)
         return torch.cat(outputs, dim=0)
 
+    @torch.compile
     def _shared_expert_chunk(self, x_chunk):
         return self.shared_expert.down_proj(
             F.silu(self.shared_expert.gate_proj(x_chunk))
